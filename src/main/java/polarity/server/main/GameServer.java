@@ -1,17 +1,18 @@
 package polarity.server.main;
 
-import ai.AIManager;
 import com.jme3.math.Vector2f;
 import com.jme3.scene.Node;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeContext;
-import events.EventManager;
-import hud.advanced.FPSCounter;
-import input.ServerInputHandler;
-import main.GameApplication;
+import polarity.server.events.EventManager;
 import polarity.server.network.ServerNetwork;
-import tools.Sys;
-import tools.Util;
+import polarity.server.world.ServerWorld;
+import polarity.shared.ai.AIManager;
+import polarity.shared.hud.advanced.FPSCounter;
+import polarity.shared.input.ServerInputHandler;
+import polarity.shared.main.GameApplication;
+import polarity.shared.tools.Sys;
+import polarity.shared.tools.Util;
 
 import java.util.concurrent.Callable;
 import java.util.logging.Level;
@@ -52,6 +53,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * @author SinisteRing
  */
 public class GameServer extends GameApplication {
+    protected static GameServer Instance = null;
     protected ServerInputHandler inputHandler;
     protected ServerNetwork serverNetwork;
     
@@ -72,8 +74,8 @@ public class GameServer extends GameApplication {
     }
     
     public static void main(String[] args){
-        main.GameServer app = new main.GameServer();
-        app.start(JmeContext.Type.Headless);
+        Instance = new GameServer();
+        Instance.start(JmeContext.Type.Headless);
     }
     
     @Override
@@ -104,6 +106,8 @@ public class GameServer extends GameApplication {
         Sys.setNetwork(serverNetwork);
         
         // Custom Initialize
+        world = new ServerWorld(50);
+        Sys.setWorld(world);
         world.generateStart();
         aiManager = new AIManager();
         eventManager = new EventManager();
