@@ -9,12 +9,12 @@ import com.jme3.network.serializing.Serializable;
  * @author Sindusk
  */
 @Serializable
-public class HealData extends AbstractMessage {
+public class NetDataNew extends AbstractMessage {
     protected int id;
     //protected CharType type;
     protected float value;
-    public HealData(){}
-    public HealData(int id, /*CharType type,*/ float value){
+    public NetDataNew(){}
+    public NetDataNew(int id, /*CharType type,*/ float value){
         this.id = id;
         //this.type = type;
         this.value = value;
