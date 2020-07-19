@@ -11,7 +11,6 @@ import polarity.shared.character.data.MonsterData;
 import polarity.shared.character.data.PlayerData;
 import polarity.shared.events.ProjectileEvent;
 import polarity.shared.files.properties.PlayerProperties;
-import polarity.shared.files.properties.ServerProperties;
 import polarity.shared.files.properties.vars.PlayerVar;
 import polarity.shared.items.Inventory;
 import polarity.shared.items.creation.ItemFactory;
@@ -21,7 +20,6 @@ import polarity.shared.netdata.testing.MonsterCreateData;
 import polarity.shared.netdata.updates.MatrixUpdate;
 import polarity.shared.network.GameNetwork;
 import polarity.shared.network.NetData;
-import polarity.shared.network.ServerStatus;
 import polarity.shared.spellforge.SpellMatrix;
 import polarity.shared.tools.DevCheats;
 import polarity.shared.tools.Util;
@@ -34,8 +32,7 @@ import java.util.concurrent.Callable;
  * @author Sindusk
  */
 public class ServerNetwork extends GameNetwork {
-    // Constants:
-    private static final String SERVER_PROPERTIES_FILENAME  = "data/properties/server/server.properties";
+    // Consants
     private static final String PLAYER_PROPERTIES_PATH      = "data/properties/player/";
     private static final String PLAYER_DATA_PATH            = "data/player/";
     
@@ -44,8 +41,6 @@ public class ServerNetwork extends GameNetwork {
     protected final GameServer app;
     protected CharacterManager charManager;
     protected Server server;
-    protected ServerProperties settings = new ServerProperties(SERVER_PROPERTIES_FILENAME);
-    protected ServerStatus status = new ServerStatus();
     
     public ServerNetwork(GameServer app){
         this.app = app;
@@ -53,8 +48,6 @@ public class ServerNetwork extends GameNetwork {
         try {
             server = Network.createServer(6143);
             registerSerials();
-            settings.load();
-            status.loadSettings(settings);
             server.addConnectionListener(listener);
             server.start();
         }catch (IOException ex){
@@ -121,7 +114,7 @@ public class ServerNetwork extends GameNetwork {
                         int id = charManager.findEmptyPlayerID();    // Find an empty slot for the player, if one exists
                         if(id != -1){
                             //connection.send(new ServerStatusData(status));
-                            if(settings.getVar("serverPlayerData").equals("true")){
+                            if(app.getProperties().getVar("serverPlayerData").equals("true")){
                                 PlayerProperties properties = new PlayerProperties(PLAYER_PROPERTIES_PATH+d.getName()+".properties");
                                 properties.load();
                                 if(properties.getVar(PlayerVar.PlayerName.getVar()).equals("")){

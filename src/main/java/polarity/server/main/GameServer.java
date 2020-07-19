@@ -4,13 +4,16 @@ import com.jme3.math.Vector2f;
 import com.jme3.scene.Node;
 import com.jme3.system.AppSettings;
 import com.jme3.system.JmeContext;
+import polarity.server.database.DatabaseManager;
 import polarity.server.events.EventManager;
+import polarity.server.files.ServerProperties;
 import polarity.server.network.ServerNetwork;
 import polarity.server.world.ServerWorld;
 import polarity.shared.ai.AIManager;
 import polarity.shared.hud.advanced.FPSCounter;
 import polarity.shared.input.ServerInputHandler;
 import polarity.shared.main.GameApplication;
+import polarity.shared.netdata.ServerStatusData;
 import polarity.shared.tools.Sys;
 import polarity.shared.tools.Util;
 
@@ -53,9 +56,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * @author SinisteRing
  */
 public class GameServer extends GameApplication {
+    // Constants:
+    private static final String SERVER_PROPERTIES_FILENAME  = "data/properties/server/server.properties";
+
+    // Instance variables:
     protected static GameServer Instance = null;
     protected ServerInputHandler inputHandler;
     protected ServerNetwork serverNetwork;
+    protected ServerProperties properties = new ServerProperties(SERVER_PROPERTIES_FILENAME);
+    protected ServerStatusData status = new ServerStatusData();
     
     protected AIManager aiManager;
     protected EventManager eventManager;
@@ -72,6 +81,9 @@ public class GameServer extends GameApplication {
     public EventManager getEventManager(){
         return eventManager;
     }
+    public ServerProperties getProperties(){
+        return properties;
+    }
     
     public static void main(String[] args){
         Instance = new GameServer();
@@ -87,7 +99,7 @@ public class GameServer extends GameApplication {
         settings.setFrameRate(64); // Server tickrate
         //settings.setRenderer(AppSettings.LWJGL_OPENGL1);
         settings.setResolution(600, 400);
-        settings.setTitle("Reach Server");
+        settings.setTitle("Polarity Server");
         this.setSettings(settings);
         super.start();
     }
@@ -95,6 +107,23 @@ public class GameServer extends GameApplication {
     @Override
     public void initialize(){
         super.initialize();
+
+        // Initialize properties
+        properties.load();
+        properties.loadSettings(status);
+
+        // Read database properties and initialize database connection.
+        String dbip = properties.getVar("dbip");
+        String dbport = properties.getVar("dbport");
+        String dbuser = properties.getVar("dbuser");
+        String dbpassword = properties.getVar("dbpassword");
+        Util.log(String.format("Using database at %s with username %s and password with length %d.", dbip, dbuser, dbpassword.length()));
+        boolean connected = DatabaseManager.connect(dbip, dbport, dbuser, dbpassword);
+        if (!connected){
+            Util.log("Failed to connect to a valid MySQL database. Stopping program now.");
+            Instance.stop();
+            return;
+        }
         
         // Initialize input handler
         Util.log("[GameServer] <initialize> Creating InputHandler...", 1);

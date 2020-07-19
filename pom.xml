@@ -48,10 +48,16 @@
             <artifactId>jme3-networking</artifactId>
             <version>${jme3_v}</version>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.21</version>
+        </dependency>
         <dependency>
             <groupId>com.github.Sindusk</groupId>
             <artifactId>PolarityShared</artifactId>
-            <version>v0.05</version>
+            <version>v0.07</version>
         </dependency>
     </dependencies>
 </project>
