@@ -13,7 +13,7 @@ public class EventManager {
     protected ArrayList<EventChain> chains;
     
     public EventManager(){
-        chains = new ArrayList();
+        chains = new ArrayList<>();
     }
     
     public void serverUpdate(Server server, GameWorld world, float tpf){

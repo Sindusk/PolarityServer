@@ -7,14 +7,13 @@ import com.jme3.scene.Node;
 import polarity.server.database.DatabaseManager;
 import polarity.server.events.EventChain;
 import polarity.server.main.GameServer;
-import polarity.shared.character.CharacterManager;
+import polarity.server.monsters.MonsterManager;
+import polarity.server.players.PlayerManager;
 import polarity.shared.character.Player;
 import polarity.shared.character.data.MonsterData;
 import polarity.shared.character.data.PlayerData;
 import polarity.shared.equipment.Equipment;
 import polarity.shared.events.ProjectileEvent;
-import polarity.shared.files.properties.PlayerProperties;
-import polarity.shared.files.properties.vars.PlayerVar;
 import polarity.shared.items.Inventory;
 import polarity.shared.items.creation.ItemFactory;
 import polarity.shared.netdata.*;
@@ -36,22 +35,14 @@ import java.util.concurrent.Callable;
  * @author Sindusk
  */
 public class ServerNetwork extends GameNetwork {
-    // SQL Statements
-    protected static final String SQL_LOAD_PLAYER = "SELECT * FROM " + DatabaseManager.TABLE_PLAYERS + " WHERE name = ?";
-    protected static final String SQL_ADD_PLAYER = "INSERT INTO " + DatabaseManager.TABLE_PLAYERS +
-            "(name)" +
-            " values " +
-            "(?)";
-
     // Important variables:
     private ServerListener listener = new ServerListener();
     protected final GameServer app;
-    protected CharacterManager charManager;
     protected Server server;
     
-    public ServerNetwork(GameServer app){
+    public ServerNetwork(GameServer app, PlayerManager playerManager, MonsterManager monsterManager){
+        super(playerManager, monsterManager);
         this.app = app;
-        this.charManager = app.getCharManager();
         try {
             server = Network.createServer(6143);
             registerSerials();
@@ -91,11 +82,11 @@ public class ServerNetwork extends GameNetwork {
             // Nothing needed here.
         }
         public void connectionRemoved(Server server, HostedConnection conn) {
-            int id = charManager.removePlayer(conn);
+            int id = playerMediator.removePlayer(conn);
             if(id == -1){
                 return;
             }
-            Player p = charManager.getPlayer(id);
+            Player p = playerMediator.getPlayer(id);
             server.broadcast(new DisconnectData(id));
             conn.close("Disconnected");
             Util.log("[Connection Removed] Player "+id+" ("+p.getName()+") has disconnected.");
@@ -116,7 +107,7 @@ public class ServerNetwork extends GameNetwork {
             if(d.getVersion().equals(app.getVersion())){    // Ensures application versions match
                 app.enqueue(new Callable<Void>(){
                     public Void call() throws Exception{
-                        int id = charManager.findEmptyPlayerID();    // Find an empty slot for the player, if one exists
+                        int id = ((PlayerManager)playerMediator).findEmptyPlayerID();    // Find an empty slot for the player, if one exists
                         if(id != -1){ // If an empty slot exists
                             if(app.getProperties().getVar("serverPlayerData").equals("true")){ // If using server-based data.
                                 PlayerData pd = null; // Will be loaded with information if the player exists.
@@ -124,19 +115,21 @@ public class ServerNetwork extends GameNetwork {
                                 if (conn != null){
                                     PreparedStatement stmt = null;
                                     try{
-                                        stmt = conn.prepareStatement(SQL_LOAD_PLAYER);
+                                        stmt = conn.prepareStatement(PlayerManager.SQL_LOAD_PLAYER);
                                         stmt.setString(1, d.getName());
                                         ResultSet rs = stmt.executeQuery();
                                         if (rs.next()){
                                             stmt.close();
                                             conn.close();
                                             Util.log(String.format("Found database entry for player %s.", d.getName()));
-                                            pd = new PlayerData(id, rs.getString("name"), new Vector2f(0, 0), new Equipment());
+                                            // Obtain all the relevant data from the ResultSet.
+                                            String name = rs.getString("name");
+                                            pd = new PlayerData(id, name, new Vector2f(0, 0), new Equipment());
                                         }else{
                                             stmt.close();
                                             conn.close();
                                             Util.log(String.format("No database entry found for player %s. Creating new one now...", d.getName()));
-                                            int playerId = createPlayerDatabaseEntry(d.getName());
+                                            int playerId = PlayerManager.createPlayerDatabaseEntry(d.getName());
                                             Util.log(String.format("Added player %s with id %d to the table %s.", d.getName(), playerId, DatabaseManager.TABLE_PLAYERS));
                                         }
                                     }catch (SQLException ignored) { }
@@ -168,37 +161,6 @@ public class ServerNetwork extends GameNetwork {
             }
         }
 
-        /**
-         * Creates a database entry for the given player name. Returns the generated key.
-         * @param name
-         * @return
-         */
-        private int createPlayerDatabaseEntry(String name){
-            Connection conn = DatabaseManager.createConnection();
-            PreparedStatement ps = null;
-            int id = -1;
-            try {
-                ps = conn.prepareStatement(SQL_ADD_PLAYER, Statement.RETURN_GENERATED_KEYS);
-                ps.setString(1, name); // Set the player name.
-                ps.executeUpdate();
-                ResultSet rs = ps.getGeneratedKeys();
-                rs.next();
-                id = Integer.parseInt(rs.getString(1));
-            } catch (SQLException e) {
-                Util.log(String.format("Failed to insert player with name %s into database: %s", name, e.getMessage()));
-            } finally {
-                // Try closing the prepared statement.
-                try {
-                    if (ps != null) ps.close();
-                } catch (SQLException ignored) { }
-                // Try closing the connection.
-                try {
-                    if (conn != null) conn.close();
-                } catch (SQLException ignored) { }
-            }
-            return id;
-        }
-        
         // SSPD off - The player sends back his player data for the server to add, then send to all other players
         /**
          * Message is recieved when a player is authenticated for joining the server.
@@ -210,13 +172,14 @@ public class ServerNetwork extends GameNetwork {
             Util.log("[ServerNetwork] <PlayerMessage> Player "+d.getID()+" (v"+app.getVersion()+") connected successfully.");
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
-                    Player player = charManager.addPlayer(app.getWorld(), d);
+                    Player player = playerMediator.addPlayer(app.getWorld(), d);
                     player.setConnection(source);
                     player.initializeMatrixArray(new Node());
                     DevCheats.initPlayerMatrix(source, d.getID(), player.getMatrix(0));
                     server.broadcast(Filters.notEqualTo(source), d);
                     app.getWorld().sendData(source);
-                    charManager.sendData(source);
+                    ((PlayerManager)playerMediator).sendPlayerData(source);
+                    ((MonsterManager)monsterMediator).sendMonsterData(source);
                     return null;
                 }
             });
@@ -229,7 +192,7 @@ public class ServerNetwork extends GameNetwork {
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
                     source.send(d);
-                    charManager.updateMatrix(d);
+                    playerMediator.updateMatrix(d);
                     return null;
                 }
             });
@@ -241,7 +204,7 @@ public class ServerNetwork extends GameNetwork {
         private void ActionMessage(final HostedConnection source, final ActionData d){
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
-                    Player owner = charManager.getPlayer(d.getID());
+                    Player owner = playerMediator.getPlayer(d.getID());
                     SpellMatrix matrix = owner.getMatrix(d.getSlot());
                     EventChain events = new EventChain(d.getStart(), d.getTarget());
                     events.addEvents(matrix.calculateEvents(source, d));
@@ -268,7 +231,7 @@ public class ServerNetwork extends GameNetwork {
         
         private void ChatMessage(final HostedConnection source, final ChatMessage d){
             server.broadcast(Filters.notEqualTo(source), d);
-            Util.log(charManager.getOwner(d.getOwner()).getName()+": "+d.getMessage());
+            Util.log(getOwner(d.getOwner()).getName()+": "+d.getMessage());
         }
         
         // END CHAT
@@ -281,7 +244,7 @@ public class ServerNetwork extends GameNetwork {
         private void MoveMessage(final HostedConnection source, final MoveData d){
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
-                    charManager.updatePlayerLocation(d);
+                    playerMediator.updateLocation(d);
                     server.broadcast(Filters.notEqualTo(source), d);
                     return null;
                 }
@@ -303,13 +266,13 @@ public class ServerNetwork extends GameNetwork {
         private void ProjectileMessage(final ProjectileData d){
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
-                    app.getWorld().addProjectile(new ProjectileEvent(charManager, d));
+                    app.getWorld().addProjectile(new ProjectileEvent(getOwner(d.getOwner()), d));
                     server.broadcast(d);
                     return null;
                 }
             });
         }
-        private void SoundMessage(SoundData d){
+        private void SoundMessage(SoundLocationalData d){
             server.broadcast(d);
         }
         
@@ -318,8 +281,8 @@ public class ServerNetwork extends GameNetwork {
         private void MobCreateMessage(final MonsterCreateData d){
             app.enqueue(new Callable<Void>(){
                 public Void call() throws Exception{
-                    MonsterData data = new MonsterData(charManager.findEmptyMonsterID(), "A Mob", d.getLocation());
-                    charManager.addMonster(app.getWorld(), data);
+                    MonsterData data = new MonsterData(((MonsterManager)monsterMediator).findEmptyMonsterID(), "A Mob", d.getLocation());
+                    monsterMediator.addMonster(app.getWorld(), data);
                     server.broadcast(data);
                     return null;
                 }
@@ -351,8 +314,8 @@ public class ServerNetwork extends GameNetwork {
                 PingMessage(source, (PingData) m);
             }else if (m instanceof ProjectileData){
                 ProjectileMessage((ProjectileData) m);
-            }else if(m instanceof SoundData){
-                SoundMessage((SoundData) m);
+            }else if(m instanceof SoundLocationalData){
+                SoundMessage((SoundLocationalData) m);
             // Testing
             }else if(m instanceof MonsterCreateData){
                 MobCreateMessage((MonsterCreateData) m);

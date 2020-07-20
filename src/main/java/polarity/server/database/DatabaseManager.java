@@ -14,11 +14,24 @@ public class DatabaseManager {
 
     // Table Names
     public static String TABLE_PLAYERS = "players";
+    public static String TABLE_ITEMS = "items";
 
     // Table Creation Strings
     protected static final String CREATE_TABLE_PLAYERS = "CREATE TABLE " + TABLE_PLAYERS +
             "(id int NOT NULL AUTO_INCREMENT," +
             "name text NOT NULL," +
+            "PRIMARY KEY(id)) COLLATE " + COLLATION;
+    protected static final String CREATE_TABLE_ITEMS = "CREATE TABLE " + TABLE_ITEMS +
+            "(id int NOT NULL AUTO_INCREMENT," +
+            "name text NOT NULL," +
+            "basetype int NOT NULL DEFAULT 0," + // Base type of the item
+            "itemclass int NOT NULL DEFAULT 0," + // Class of the item
+            "data1 float NOT NULL DEFALUT 0," +
+            "data2 float NOT NULL DEFAULT 0," +
+            "data3 float NOT NULL DEFAULT 0," +
+            "data4 float NOT NULL DEFAULT 0," +
+            "data5 float NOT NULL DEFAULT 0," +
+            "data6 float NOT NULL DEFAULT 0," +
             "PRIMARY KEY(id)) COLLATE " + COLLATION;
 
     // Database Connection Variables
@@ -32,6 +45,7 @@ public class DatabaseManager {
      */
     protected static void checkTables(){
         checkCreateTable(TABLE_PLAYERS, CREATE_TABLE_PLAYERS);
+        checkCreateTable(TABLE_ITEMS, CREATE_TABLE_ITEMS);
     }
 
     /**
@@ -70,7 +84,7 @@ public class DatabaseManager {
      */
     @Nullable
     private static Connection createConnection(String database){
-        Connection conn = null;
+        Connection conn;
         try {
             String connString = buildConnectionString(DB_IP, DB_PORT, database);
             conn = DriverManager.getConnection(connString, DB_USER, DB_PASSWORD);

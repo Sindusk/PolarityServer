@@ -7,11 +7,13 @@ import com.jme3.system.JmeContext;
 import polarity.server.database.DatabaseManager;
 import polarity.server.events.EventManager;
 import polarity.server.files.ServerProperties;
+import polarity.server.input.ServerInputHandler;
+import polarity.server.monsters.MonsterManager;
 import polarity.server.network.ServerNetwork;
+import polarity.server.players.PlayerManager;
 import polarity.server.world.ServerWorld;
 import polarity.shared.ai.AIManager;
 import polarity.shared.hud.advanced.FPSCounter;
-import polarity.shared.input.ServerInputHandler;
 import polarity.shared.main.GameApplication;
 import polarity.shared.netdata.ServerStatusData;
 import polarity.shared.tools.Sys;
@@ -57,10 +59,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 public class GameServer extends GameApplication {
     // Constants:
-    private static final String SERVER_PROPERTIES_FILENAME  = "data/properties/server/server.properties";
+    private static final String SERVER_PROPERTIES_FILENAME  = "server.properties";
 
     // Instance variables:
     protected static GameServer Instance = null;
+    protected PlayerManager playerManager = new PlayerManager();
+    protected MonsterManager monsterManager = new MonsterManager();
     protected ServerInputHandler inputHandler;
     protected ServerNetwork serverNetwork;
     protected ServerProperties properties = new ServerProperties(SERVER_PROPERTIES_FILENAME);
@@ -124,6 +128,8 @@ public class GameServer extends GameApplication {
             Instance.stop();
             return;
         }
+
+        // Initialize Player Manager.
         
         // Initialize input handler
         Util.log("[GameServer] <initialize> Creating InputHandler...", 1);
@@ -131,7 +137,7 @@ public class GameServer extends GameApplication {
         
         // Start server network
         Util.log("[GameServer] <initialize> Starting Network...", 1);
-        serverNetwork = new ServerNetwork(this);
+        serverNetwork = new ServerNetwork(this, playerManager, monsterManager);
         Sys.setNetwork(serverNetwork);
         
         // Custom Initialize
@@ -163,13 +169,19 @@ public class GameServer extends GameApplication {
         
         enqueue(new Callable<Void>(){
             public Void call() throws Exception{
-                aiManager.serverUpdate(getWorld(), charManager.getMonsters(), tpf);
+                aiManager.serverUpdate(getWorld(), monsterManager.getMonsters(), tpf);
                 return null;
             }
         });
         enqueue(new Callable<Void>(){
             public Void call() throws Exception{
-                charManager.serverUpdate(getWorld(), tpf);
+                playerManager.serverUpdate((ServerWorld)getWorld(), tpf);
+                return null;
+            }
+        });
+        enqueue(new Callable<Void>(){
+            public Void call() throws Exception{
+                monsterManager.serverUpdate((ServerWorld)getWorld(), tpf);
                 return null;
             }
         });

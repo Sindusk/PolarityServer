@@ -14,7 +14,7 @@ import java.util.ArrayList;
  * @author Sindusk
  */
 public class EventChain {
-    protected ArrayList<Event> chain = new ArrayList();
+    protected ArrayList<Event> chain = new ArrayList<>();
     protected float distance;
     protected float spread;
     protected boolean finished = false;
