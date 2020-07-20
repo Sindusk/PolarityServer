@@ -1,14 +1,17 @@
 package polarity.server.network;
 
+import com.jme3.math.Vector2f;
 import com.jme3.network.*;
 import com.jme3.network.serializing.Serializer;
 import com.jme3.scene.Node;
+import polarity.server.database.DatabaseManager;
 import polarity.server.events.EventChain;
 import polarity.server.main.GameServer;
 import polarity.shared.character.CharacterManager;
 import polarity.shared.character.Player;
 import polarity.shared.character.data.MonsterData;
 import polarity.shared.character.data.PlayerData;
+import polarity.shared.equipment.Equipment;
 import polarity.shared.events.ProjectileEvent;
 import polarity.shared.files.properties.PlayerProperties;
 import polarity.shared.files.properties.vars.PlayerVar;
@@ -25,6 +28,7 @@ import polarity.shared.tools.DevCheats;
 import polarity.shared.tools.Util;
 
 import java.io.IOException;
+import java.sql.*;
 import java.util.concurrent.Callable;
 
 /**
@@ -32,10 +36,13 @@ import java.util.concurrent.Callable;
  * @author Sindusk
  */
 public class ServerNetwork extends GameNetwork {
-    // Consants
-    private static final String PLAYER_PROPERTIES_PATH      = "data/properties/player/";
-    private static final String PLAYER_DATA_PATH            = "data/player/";
-    
+    // SQL Statements
+    protected static final String SQL_LOAD_PLAYER = "SELECT * FROM " + DatabaseManager.TABLE_PLAYERS + " WHERE name = ?";
+    protected static final String SQL_ADD_PLAYER = "INSERT INTO " + DatabaseManager.TABLE_PLAYERS +
+            "(name)" +
+            " values " +
+            "(?)";
+
     // Important variables:
     private ServerListener listener = new ServerListener();
     protected final GameServer app;
@@ -89,8 +96,6 @@ public class ServerNetwork extends GameNetwork {
                 return;
             }
             Player p = charManager.getPlayer(id);
-            PlayerProperties properties = new PlayerProperties(PLAYER_PROPERTIES_PATH+p.getName()+".properties");
-            properties.savePlayerData(p);
             server.broadcast(new DisconnectData(id));
             conn.close("Disconnected");
             Util.log("[Connection Removed] Player "+id+" ("+p.getName()+") has disconnected.");
@@ -112,22 +117,39 @@ public class ServerNetwork extends GameNetwork {
                 app.enqueue(new Callable<Void>(){
                     public Void call() throws Exception{
                         int id = charManager.findEmptyPlayerID();    // Find an empty slot for the player, if one exists
-                        if(id != -1){
-                            //connection.send(new ServerStatusData(status));
-                            if(app.getProperties().getVar("serverPlayerData").equals("true")){
-                                PlayerProperties properties = new PlayerProperties(PLAYER_PROPERTIES_PATH+d.getName()+".properties");
-                                properties.load();
-                                if(properties.getVar(PlayerVar.PlayerName.getVar()).equals("")){
-                                    properties.setVar(PlayerVar.PlayerName.getVar(), d.getName());
-                                    properties.save();
+                        if(id != -1){ // If an empty slot exists
+                            if(app.getProperties().getVar("serverPlayerData").equals("true")){ // If using server-based data.
+                                PlayerData pd = null; // Will be loaded with information if the player exists.
+                                Connection conn = DatabaseManager.createConnection();
+                                if (conn != null){
+                                    PreparedStatement stmt = null;
+                                    try{
+                                        stmt = conn.prepareStatement(SQL_LOAD_PLAYER);
+                                        stmt.setString(1, d.getName());
+                                        ResultSet rs = stmt.executeQuery();
+                                        if (rs.next()){
+                                            stmt.close();
+                                            conn.close();
+                                            Util.log(String.format("Found database entry for player %s.", d.getName()));
+                                            pd = new PlayerData(id, rs.getString("name"), new Vector2f(0, 0), new Equipment());
+                                        }else{
+                                            stmt.close();
+                                            conn.close();
+                                            Util.log(String.format("No database entry found for player %s. Creating new one now...", d.getName()));
+                                            int playerId = createPlayerDatabaseEntry(d.getName());
+                                            Util.log(String.format("Added player %s with id %d to the table %s.", d.getName(), playerId, DatabaseManager.TABLE_PLAYERS));
+                                        }
+                                    }catch (SQLException ignored) { }
+                                }else{
+                                    Util.log("Failed to connect to database to receive player data.");
                                 }
-                                PlayerData pd = properties.getPlayerData(id);
+                                if (pd == null){ // If we couldn't find the player in the database, make a new default PlayerData instance.
+                                    pd = new PlayerData(id, d.getName(), new Vector2f(0, 0), new Equipment());
+                                }
                                 Inventory inv = new Inventory();
                                 // Adds some randomly generated items to the inventory for testing
-                                int i = 0;
-                                while(i < 40){
+                                for(int i = 0; i < 40; i++){
                                     inv.add(ItemFactory.randomItem(inv, (int) Util.scaledRandFloat(1, 100)));
-                                    i++;
                                 }
                                 pd.setInventory(inv);
                                 source.send(new PlayerConnectionData(id, pd));
@@ -144,6 +166,37 @@ public class ServerNetwork extends GameNetwork {
                 Util.log("[Connect Message] ERROR: Client has incorrect version. A player was denied connection.");
                 source.close("Invalid Version. [Client: "+d.getVersion()+"] [Server: "+app.getVersion()+"]");
             }
+        }
+
+        /**
+         * Creates a database entry for the given player name. Returns the generated key.
+         * @param name
+         * @return
+         */
+        private int createPlayerDatabaseEntry(String name){
+            Connection conn = DatabaseManager.createConnection();
+            PreparedStatement ps = null;
+            int id = -1;
+            try {
+                ps = conn.prepareStatement(SQL_ADD_PLAYER, Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, name); // Set the player name.
+                ps.executeUpdate();
+                ResultSet rs = ps.getGeneratedKeys();
+                rs.next();
+                id = Integer.parseInt(rs.getString(1));
+            } catch (SQLException e) {
+                Util.log(String.format("Failed to insert player with name %s into database: %s", name, e.getMessage()));
+            } finally {
+                // Try closing the prepared statement.
+                try {
+                    if (ps != null) ps.close();
+                } catch (SQLException ignored) { }
+                // Try closing the connection.
+                try {
+                    if (conn != null) conn.close();
+                } catch (SQLException ignored) { }
+            }
+            return id;
         }
         
         // SSPD off - The player sends back his player data for the server to add, then send to all other players

@@ -9,10 +9,11 @@ public class DatabaseManager {
     // Database Name & Creation String
     protected static String DATABASE_NAME = "polarity";
     protected static String SQL_CREATE_DATABASE = "CREATE DATABASE "+DATABASE_NAME;
+    protected static String SQL_JDBC = "jdbc:mysql://";
     protected static String COLLATION = "utf8_general_ci";
 
     // Table Names
-    protected static String TABLE_PLAYERS = "players";
+    public static String TABLE_PLAYERS = "players";
 
     // Table Creation Strings
     protected static final String CREATE_TABLE_PLAYERS = "CREATE TABLE " + TABLE_PLAYERS +
@@ -41,7 +42,7 @@ public class DatabaseManager {
      * @return String used to connect to the SQL Server.
      */
     private static String buildConnectionString(String dbip, String dbport, String database){
-        return "jdbc:mysql://" +
+        return SQL_JDBC +
                 dbip +
                 ":" +
                 dbport +
@@ -81,10 +82,19 @@ public class DatabaseManager {
     }
 
     /**
-     * Execute a query with no parameters.
-     * @param query Query to execute.
+     * Creates a connection using the standard database.
+     * @return Connection instance to the SQL Server using the standard database.
      */
-    protected static void executeQuery(String query){
+    @Nullable
+    public static Connection createConnection(){
+        return createConnection(DATABASE_NAME);
+    }
+
+    /**
+     * Execute an update query with no parameters.
+     * @param query Update query to execute.
+     */
+    public static void executeUpdate(String query){
         Connection conn = null;
         Statement stmt = null;
         try {
@@ -104,6 +114,38 @@ public class DatabaseManager {
                 if (conn != null) conn.close();
             } catch (SQLException ignored) { }
         }
+    }
+
+    /**
+     * Executes a scalar query and returns the generated key. Cannot take arguments.
+     * @param query Query to execute.
+     * @return Key generated from the query.
+     */
+    public static int executeScalarQuery(String query){
+        Connection conn = null;
+        PreparedStatement ps = null;
+        int id = -1;
+        try {
+            String connString = buildConnectionString(DB_IP, DB_PORT, DATABASE_NAME);
+            conn = DriverManager.getConnection(connString, DB_USER, DB_PASSWORD);
+            ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            rs.next();
+            id = Integer.parseInt(rs.getString(1)); // Key comes out as a string, must be parsed to integer.
+        } catch (SQLException e) {
+            Util.log(e.getMessage());
+        } finally {
+            // Try to close the statement.
+            try {
+                if (ps != null) ps.close();
+            } catch (SQLException ignored) { }
+            // Try to close the connection.
+            try {
+                if (conn != null) conn.close();
+            } catch (SQLException ignored) { }
+        }
+        return id;
     }
 
     /**
@@ -183,7 +225,7 @@ public class DatabaseManager {
             Util.log(String.format("Table \"%s\" already exists.", table));
         }else{
             Util.log(String.format("Table \"%s\" does not exist. Creating it now.", table));
-            executeQuery(createTableQuery);
+            executeUpdate(createTableQuery);
         }
     }
 
